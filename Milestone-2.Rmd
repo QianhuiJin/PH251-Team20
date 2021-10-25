@@ -1,0 +1,104 @@
+---
+title: "Project_Milestone_2"
+author: "Team 20"
+date: "9/30/2021"
+output:
+  pdf_document: default
+  word_document: default
+---
+#1: Data Description
+What is the data source? (1-2 sentences on where the data is coming from, dates
+included, etc.) The CalEnviroScreen3.0 data came from the California Environmental Protection Agency (CalEPA). It’s publicly avaliable on the website of CaliforniaOffice of Environmental Health Hazard Assess-
+ment (OEHHA). It includes includes exposoure indicators (Ozone, PM2.5, diesel PM, drinking water contaminants, pesticide use, toxic release form facilities, traffic density), environemntal effect indicators(clean upsites, groundwater threats, hazard wastes generatosrs, impaired water bodies, solid waste sites), sensitive population indicators(asthma, cardiovascular diseases, low birth weight) and socioeconomic factor indicators(unemployment, housing, education, poverty, linguistic isolation).
+
+Another dataset we use is a mortality dataset of California from 1989 to 2019. The dataset contains counts of deaths for California residents by ZIP Code based on information entered on death certificates.                
+                       
+How does the dataset relate to the group problem statement and question? Our group wants to look at the the relationship between air quality levels and Chronic Lower Respiratory Disease Mortality in California.The CalEnviroScreen3.0 data can provide us with PM2.5 air pollution data and the mortality data can provide us death from Chronic Lower Respiratory Disease.   
+\newpage
+
+#2: Import statement
+       
+Use appropriate import function and package based on the type of file. 
+Utilize function arguments to control relevant components (i.e. change column types, column names, missing values, etc.). Document the import process
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(knitr)
+library(tidyverse)
+library(readr)
+```
+
+```{R}
+#air quality 
+air_qual<- read_csv("~/PHW251_Fall2021/AirQual_Project/air_qual.csv", 
+                    col_names = TRUE, col_types = NULL,  na = c("", "NA"))
+ca_air_qual <- rename(air_qual, county = "California County", 
+                      zip = "ZIP", 
+                      avg_PM2.5_per_zip = "Avg PM2.5 Per ZIP")
+ca_air_qual[,3] <- round(ca_air_qual$avg_PM2.5_per_zip, 3)
+print(ca_air_qual %>% head(3))
+dim(ca_air_qual)
+
+#mort data 
+mort_by_zip <- read_csv("~/PHW251_Fall2021/AirQual_Project/mort_by_zip.csv",na = c("", "NA"))
+
+mort_by_zip <- select(mort_by_zip, "Year", "ZIP_Code", "Cause", "Cause_Desc", "Count")
+mort_by_year <- filter(mort_by_zip, between(Year, 2009, 2018) )
+mort_by_cause <- filter(mort_by_year, Cause == "CLD")
+mort_by_cause %>% head(2)
+```
+
+\newpage
+
+#3: Identify data types for 5+ data elements/columns/variables.    
+        
+Identify 5+ data elements required for your specified scenario. If <5 elements are required to complete the analysis, please choose additional variables of interest in the data set to explore in this milestone.Utilize functions or resources in RStudio to determine the types of each data element (i.e. character, numeric, factor) Identify the desired type/format for each variable—will you need to convert any columns to numeric or another type? 
+
+```{R}
+#var 1
+class(ca_air_qual$county)
+#var 2
+class(ca_air_qual$zip)
+ca_air_qual$zip <- as.character(ca_air_qual$zip)
+class(ca_air_qual$zip)
+# var 3
+class(ca_air_qual$avg_PM2.5_per_zip)
+#var 4
+class(mort_by_cause$Year)
+mort_by_cause$Year <- as.character(mort_by_cause$Year)
+#var 5
+class(mort_by_cause$Cause)
+#var 6 
+mort_by_cause$ZIP_Code <- as.character(mort_by_cause$ZIP_Code)
+class(mort_by_cause$ZIP_Code)
+
+```
+
+We needed to convert zipcodes into characters, instead of numeric values. We also needed to convert year into a character variable. 
+
+\newpage
+
+#4: Provide a basic description of the 5+ data elements.       
+Numeric: mean, median, range.        
+Character:  unique values/categories.       
+Or any other descriptives that will be useful to the analysis.     
+```{r}
+#var 1
+unique(ca_air_qual$county)
+length(unique(ca_air_qual$county))
+#var 2
+length(unique(ca_air_qual$zip))
+#var 3
+summary(ca_air_qual$avg_PM2.5_per_zip)
+#var 4
+unique(mort_by_cause$Year)
+#var 5
+unique(mort_by_cause$Cause)
+#var 6
+length(unique(mort_by_cause$ZIP_Code))
+
+#overall stats 
+str(ca_air_qual)
+str(mort_by_cause)
+
+```
+
