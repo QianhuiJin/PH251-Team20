@@ -1,0 +1,178 @@
+---
+title: "Milestone 3: Clean dataset with descriptive statistics for relevant data elements"
+author: "Team 20"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(knitr)
+library(tidyverse)
+library(readr)
+library(tableone)
+library(kableExtra)
+```
+
+
+#1. Subset rows & columns
+```{r }
+#air quality 
+air_qual<- read_csv("air_qual.csv",
+                    col_names = TRUE, col_types = NULL, na = c("", "NA"))
+ca_air_qual <- rename(air_qual, county = "California County", 
+                      zip = "ZIP", 
+                      avg_PM2.5_per_zip = "Avg PM2.5 Per ZIP")
+ca_air_qual[,3] <- round(ca_air_qual$avg_PM2.5_per_zip, 3)
+head(ca_air_qual)
+dim(ca_air_qual)
+
+#mort data 
+mort_by_zip <- read_csv("mort_by_zip.csv",na = c("", "NA"))
+mort_by_zip <- select(mort_by_zip, "Year", "ZIP_Code", "Cause", "Cause_Desc", "Count")
+mort_by_year <- filter(mort_by_zip, between(Year, 2009, 2018) )
+mort_by_cause <- filter(mort_by_year, Cause == "CLD")
+head(mort_by_cause)
+dim(mort_by_cause)
+
+```
+
+\newpage
+
+#2. Creating 2+ new variables (and subsetting by pollution level)
+
+Identify and create a "critical" category of PM2.5 measurements (the highest quantile), and subset those zipcode observations. 
+
+```{r }
+#grouping all zipcodes 
+air_qual_grouped_zips <- ca_air_qual %>% 
+  group_by(zip,county) %>% 
+  summarise(avg_PM_per_zip = mean(avg_PM2.5_per_zip))
+
+```
+
+
+
+```{r }
+quantile(air_qual_grouped_zips$avg_PM_per_zip, c(.10,.25,.5,.75,.90), 
+         na.rm = TRUE)
+#75th percentile is 11.84
+#90th percentile is 12.89
+
+#creating new binary column to indicate whether or not the zip has a critical 
+#value of PM2.5 pollution
+
+air_qual_grouped_zips <- air_qual_grouped_zips %>% 
+  mutate(critical_level_pollution =  case_when(avg_PM_per_zip >= 11.84~1))
+
+air_qual_grouped_zips$critical_level_pollution[is.na(air_qual_grouped_zips$critical_level_pollution)] <- 0
+
+#creating a subset of zip codes that have PM2.5 above critical value 
+air_qual_by_75_percent <- air_qual_grouped_zips %>%
+  filter(critical_level_pollution == 1)
+
+```
+
+
+```{r }
+#remove duplicates of zip code
+duplicated(air_qual_by_75_percent$zip)
+length(duplicated(air_qual_by_75_percent$zip))
+length(unique(air_qual_by_75_percent$zip))
+air_qual_by_75_percent<-air_qual_by_75_percent[!duplicated(air_qual_by_75_percent$zip), ]
+
+```
+
+Creating a *total count* of CLDRM for the 2009-2018 period.
+```{r }
+mort_grouped_zip <- mort_by_cause %>% 
+  group_by(ZIP_Code, Cause) %>% 
+  summarise(sum_count = sum(Count))
+
+head(mort_grouped_zip)
+dim(mort_grouped_zip)
+```
+
+subset of mortality data to match pollution data 
+```{r }
+mort_matched_zips <- mort_grouped_zip %>% 
+  filter(ZIP_Code %in% air_qual_by_75_percent$zip) 
+
+mort_matched_zips 
+```
+
+\newpage
+
+#3. Cleaning data 
+Creating new data set with mortality and pollution columns for all zip codes with a critical level of PM2.5 pollution + died from CLD 
+```{r }
+final_data <- cbind(air_qual_by_75_percent, mort_matched_zips)
+final_data <- final_data %>% 
+  select( county, zip, avg_PM_per_zip, sum_count)
+
+#cleaning 
+final_data$sum_count[is.na(final_data$sum_count)] <- NA
+final_data$avg_PM_per_zip <- round(final_data$avg_PM_per_zip, 2)
+final_data$zip <-as.character(final_data$zip)
+head(final_data)
+#final_data[is.na(final_data)] <- 0 
+
+```
+
+\newpage
+
+#4. Data dictionary
+
+```{r}
+
+data_dictionary <- data.frame("Variable name" = c("zip", "avg_PM_per_zip", 
+                                                  "sum_count", 
+                                                  "critical_level_pollution",
+                                                  "county"),
+                              "Data type" = c("Character", "Numeric", "Numeric", 
+                                              "Numeric", "Character"),
+                              "Description" = c("California zip codes", 
+                              "Average PM2.5 per zip code", 
+                              "Total count of CLDRM for the 2009-2018 period", 
+                              "Binary variable to indicate whether or not the zip has a critical value of PM2.5 pollution (at least 11.84)", 
+                              "California county names"))
+
+kable(data_dictionary, col.names = c("Variable Name", "Data Type", "Description"), 
+      caption = "Data Dictionary for CA CLD mortality per 
+      zip code given PM2.5 air pollution rate")
+
+```
+
+\newpage 
+
+
+
+#5. One or more tables with descriptive statistics for 4 data elements
+```{r}
+#table of average pollution & counts CLDRM
+
+myvars <- c("avg_PM_per_zip", "sum_count")
+
+tab_1 <- CreateTableOne(vars = myvars, data = final_data,)
+
+tab_1
+
+```
+
+```{r}
+#table of average pollution and deaths per county
+
+avgpm_mort_county<-final_data %>% 
+  group_by(county) %>% 
+  summarise(avg_pm25=mean(avg_PM_per_zip), death = sum(sum_count, na.rm = T))
+avgpm_mort_county <- avgpm_mort_county %>% arrange(desc(avg_pm25))
+
+kable(avgpm_mort_county)
+
+#myvars_2 <- c( "avg_pm25", "death")
+#tab_2 <- CreateTableOne(vars = myvars_2, data = avgpm_mort_county, strata = "county")
+#tab_2
+
+```
+
