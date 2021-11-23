@@ -1,0 +1,247 @@
+---
+title: "Milestone 4"
+author: "Team 20"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(knitr)
+library(tidyverse)
+library(readr)
+library(kableExtra)
+library(ggpubr)
+library(ggplot2)
+
+#debug LaTeX
+#tinytex::tlmgr_update()
+#options(tinytex.verbose = TRUE)
+```
+
+
+```{r, echo = FALSE,results="hide",include=FALSE}
+#air quality 
+air_qual <- read_csv("air_qual.csv",
+                    col_names = TRUE, col_types = NULL, na = c("", "NA"))
+ca_air_qual <- rename(air_qual, county = "California County", 
+                      zip = "ZIP", 
+                      avg_PM2.5_per_zip = "Avg PM2.5 Per ZIP")
+ca_air_qual[,3] <- round(ca_air_qual$avg_PM2.5_per_zip, 3)
+
+#mort data 
+mort_by_zip <- read_csv("mort_by_zip.csv",
+  na = c("", "NA"))
+mort_by_zip <- select(mort_by_zip, "Year", "ZIP_Code", "Cause", "Cause_Desc", "Count")
+mort_by_year <- filter(mort_by_zip, between(Year, 2009, 2018) )
+mort_by_cause <- filter(mort_by_year, Cause == "CLD")
+head(mort_by_cause)
+dim(mort_by_cause)
+
+```
+
+```{r, echo = FALSE,results="hide",include=FALSE}
+#grouping all zipcodes 
+air_qual_grouped_zips <- ca_air_qual %>% 
+  group_by(zip,county) %>% 
+  summarise(avg_PM_per_zip = mean(avg_PM2.5_per_zip))
+
+```
+
+
+```{r, echo = FALSE,results="hide",include=FALSE}
+air_qual_grouped_zips <- air_qual_grouped_zips %>% 
+  mutate(critical_level_pollution =  case_when(avg_PM_per_zip >= 11.84~1))
+
+air_qual_grouped_zips$critical_level_pollution[is.na(air_qual_grouped_zips$critical_level_pollution)] <- 0
+
+#creating a subset of zip codes that have PM2.5 above critical value 
+air_qual_by_75_percent <- air_qual_grouped_zips %>%
+  filter(critical_level_pollution == 1)
+
+```
+
+
+```{r, echo = FALSE,results="hide",include=FALSE}
+#remove duplicates of zip code
+length(duplicated(air_qual_by_75_percent$zip))
+length(unique(air_qual_by_75_percent$zip))
+air_qual_by_75_percent<-air_qual_by_75_percent[!duplicated(air_qual_by_75_percent$zip), ]
+
+```
+
+```{r, echo = FALSE,results="hide",include=FALSE}
+mort_grouped_zip <- mort_by_cause %>% 
+  group_by(ZIP_Code, Cause) %>% 
+  summarise(sum_count = sum(Count))
+
+head(mort_grouped_zip)
+dim(mort_grouped_zip)
+```
+
+
+```{r, echo = FALSE,results="hide",include=FALSE}
+mort_matched_zips <- mort_grouped_zip %>% 
+  filter(ZIP_Code %in% air_qual_by_75_percent$zip) 
+
+mort_matched_zips 
+```
+
+
+```{r, echo = FALSE,results="hide",include=FALSE}
+final_data <- cbind(air_qual_by_75_percent, mort_matched_zips)
+final_data <- final_data %>% 
+  select( county, zip, avg_PM_per_zip, sum_count)
+
+#cleaning 
+final_data$sum_count[is.na(final_data$sum_count)] <- NA
+final_data$avg_PM_per_zip <- round(final_data$avg_PM_per_zip, 2)
+final_data$zip <-as.character(final_data$zip)
+head(final_data)
+#final_data[is.na(final_data)] <- 0 
+
+```
+
+# TABLES
+
+## Table 1 and 2 display average pollution measured by Particulate Matter 2.5 (PM2.5) and deaths due to Chonric Lower Respiratory Disease (CLRD) by zip code and county levels in California.
+
+
+### Table 1: Average pollution and CLRD deaths per zip code
+
+```{r}
+avgpm_mort_zip2<-final_data %>% 
+  group_by(zip) %>% 
+  summarise(county, average_PM2.5=mean(avg_PM_per_zip), death = sum(sum_count, na.rm = T)) %>%
+  filter(death > 0)
+
+avgpm_mort_zip2 <- avgpm_mort_zip2 %>% arrange(desc("average_PM2.5"))
+
+kable(avgpm_mort_zip2, booktabs =T, 
+      col.names=c("Zip Code","County", "Average PM2.5","CLDRM Counts"),
+      align='lccc',
+      caption="Table 1: Chronic Lower Respiratory Disease (CLRD) Mortality by California 
+      zip codes with critically high levels of Particulate Matter 2.5 (PM2.5),
+      2009-2018"
+      ) %>%
+  kable_styling(full_width=F) %>%
+  kable_styling(position="left") %>%
+  kable_styling(font_size=10) %>%
+  column_spec(1, bold=TRUE) %>%
+  column_spec(4, color=if_else(avgpm_mort_zip2$death>278,"red","black")) %>%
+  footnote(
+    general="Counties with the most number of zip codes with both critical levels
+    of PM2.5 and CLRD deaths include Los Angeles (13), San Bernadino (10), and 
+    Kern (7) counties. On the other hand, zip codes that hold the highest death 
+    counts in the 75th percentile belong to many counties: Kern, Los Angeles, 
+    Stanislaus, Tulare, Riverside, San Diego, and Kings counties, with one Kern 
+    zip code (93308) holding the highest death count of 469. Kern zip codes also 
+    hold the top 7 highest PM2.5 levels ranging between 18.76-19.31.",
+    general_title="Interpretation",
+    title_format=c("italic"),
+    threeparttable=T) %>%
+   footnote(
+    general="CLRD mortality counts highlighted in red represent death counts in the 
+    75th percentile. Only zip codes with critical levels of PM2.5 are included in 
+    this table, and zip codes with no reported deaths between 2009-2018 were excluded.",
+    general_title="Legend",
+    title_format=c("italic"),
+    threeparttable=T)
+ 
+
+```
+
+\newpage
+
+### Table 2: Average pollution and CLRD deaths by county
+
+```{r}
+avgpm_mort_county<-final_data %>% 
+  group_by(county) %>% 
+  summarise(average_PM2.5= round(mean(avg_PM_per_zip),digits = 2), 
+            death = sum(sum_count, na.rm = T))
+
+avgpm_mort_county <- avgpm_mort_county %>% arrange(desc(death))
+
+kable(avgpm_mort_county, booktabs =T, 
+      col.names=c("County", "Average PM2.5","CLRD Mortality Counts"),
+      align='lcc',
+      caption="Table 2: Chronic Lower Respiratory Disease (CLRD) Mortality by 
+      California counties with critically high levels of Particulate Matter 2.5 
+      (PM2.5), 2009-2018") %>%
+  kable_styling(full_width=F) %>%
+  kable_styling(position="left") %>%
+  kable_styling(font_size=10) %>%
+  column_spec(1, bold=TRUE) %>%
+  footnote(
+    general="In accordance with the table above, Los Angeles, San Bernardino, and
+    Kern counties hold the highest death counts. Counties with the highest average
+    PM2.5 levels are Kern, Kings, Tulare, and Fresno (17.57, 15.86, 15.56, and D
+    15.24, respectively). Despite having critical levels of PM2.5, the counties 
+    of Imperial, Madera, and Orange had no reported CLRD deaths between 2009-2018.",
+    general_title="Interpretation",
+    title_format=c("italic"),
+    threeparttable=T) %>%
+   footnote(
+    general="Zip code level PM2.5 and CLRD death data are averaged by county. 
+    Only counties with critical levels of PM2.5 are included in this table, and 
+    zip codes with no reported deaths between 2009-2018 were excluded.",
+    general_title="Legend",
+    title_format=c("italic"),
+    threeparttable=T)
+```
+
+\newpage
+
+### CHARTS
+
+## The following two charts seek to explore the relationship between the continuous PM2.5 values and CLRD Mortality counts occurring in all the identified critical category zip codes 
+
+
+```{r}
+final_data_1<-na.omit(final_data)
+
+final_data_1$zip<-as.factor(final_data_1$zip)
+  ggplot(final_data_1)  + 
+  geom_bar(aes(x = reorder(zip, -sum_count), y=sum_count,color = "sum_count"),stat="identity", fill="cyan")+ 
+  geom_line(aes(x = reorder(zip, -sum_count),y=avg_PM_per_zip*10),stat="identity",color="red",
+            group=1,ylim=c(0,20))+
+  labs(title= "Figure 1: Chronic Lower Respiratory Disease (CLRD) mortality 
+       and Particulate Matter 2.5 (PM2.5) air pollution measurements per zip code 
+       among those with critical levels of 2.5PM (California 2009-2018)",
+       x="Zip Code",y="CLRD Mortality",
+        caption = 
+         "Figure 1 shows the CLRD mortality and PM2.5 air pollution measurements in zip 
+         codes where PM2.5 measurements are in the critical category (the highest quantile). 
+         The blue bars represent CLRD death counts while the rea line represents PM2.5 air 
+         pollution measurements this plot we cannot see a strong correlation between 
+         CLRD mortality and PM2.5 measurements." )+
+   scale_y_continuous(sec.axis=sec_axis(~.*0.1,name="PM2.5 Measurements"))+
+    theme(axis.text.x=element_text(angle=90,colour="grey20",face="bold",size=8))  + theme(plot.caption = element_text(hjust = 0))+ theme(legend.position="bottom")+
+   scale_color_discrete(label="Chronic Lower Respiratory Disease (CLRD) mortality")
+  
+```
+
+
+\newpage
+
+```{r}
+ggplot(data = final_data, aes(x = avg_PM_per_zip, y = sum_count)) +
+  geom_point(na.rm = T) + 
+  geom_smooth(method = "lm", na.rm = T, se = T, level = .95) + theme_bw() + 
+  labs(title = "Figure 2: Total Chronic Lower Respiratory Disease (CLRD) mortality by 
+               Particulate Matter 2.5 (PM2.5) air pollution per zip code among those with 
+               critical levels of PM2.5 (California 2009-2018) ",
+       x= "PM2.5 pollution (Critical levels)", y= "Total CLRD mortality count ", 
+       caption = "Figure 2 shows a positive association between higher levels of PM2.5 air pollution
+       and increased levels of CLRD mortality per zip code. Our correlation coefficient value is 0.27, which
+       indicates a small correlation but positive correlation between critical levels of PM2.5 air pollution
+       and CLDR mortality. The p-value for our correlation is 0.039, meaning that although our correlation is 
+       small, it is still statistically significant.")  +
+  stat_cor(method = "pearson",na.rm = T) + theme(plot.caption = element_text(hjust = 0))
+
+```
+
+
+
